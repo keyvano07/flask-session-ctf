@@ -1,0 +1,12 @@
+src/
+.vscode/
+.git/
+__pycache__/
+*.pyc
+.env
+.env.local
+solve.py
+run.bat
+docker-compose.yml
+Dockerfile
+SOLUTION.md

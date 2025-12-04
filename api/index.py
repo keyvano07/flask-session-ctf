@@ -1,10 +1,13 @@
 from base64 import b64encode
 import os 
 from flask import Flask, request, session
-from .flag import flag 
+
+# Import flag
+flag = "UbigCTF{Keyvano_Ganteng_kwokwokw_canda}"
 
 app = Flask(__name__) 
-app.secret_key = os.urandom(64)
+# Use consistent secret key for serverless (or use environment variable)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production-12345678901234567890')
 
 @app.route('/') 
 def home():
@@ -191,4 +194,10 @@ def get_flag():
         """
 
 # Vercel serverless function handler
-handler = app
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# Export for Vercel
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
