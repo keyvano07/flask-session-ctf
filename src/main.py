@@ -74,7 +74,11 @@ def get_flag():
     sk = request.args.get('sk')
     
     if sk:
-        secret_key_encoded = b64encode(app.secret_key).decode('utf-8')
+        # Handle both string and bytes secret keys
+        if isinstance(app.secret_key, str):
+            secret_key_encoded = b64encode(app.secret_key.encode('utf-8')).decode('utf-8')
+        else:
+            secret_key_encoded = b64encode(app.secret_key).decode('utf-8')
         print(f"[DEBUG] Submitted: {sk[:50]}...")
         print(f"[DEBUG] Expected:  {secret_key_encoded[:50]}...")
         print(f"[DEBUG] Match: {sk == secret_key_encoded}")
